@@ -4,8 +4,10 @@ A complete ASP.NET Web Forms application that integrates Draw.io/diagrams.net fo
 
 ## Features
 
-- ✅ Display diagram thumbnails
+- ✅ Display diagram thumbnails (PNG images)
+- ✅ **XMLPNG Support**: Click PNG to extract embedded diagram XML and load in editor
 - ✅ Click to open full Draw.io editor in iframe
+- ✅ Create new diagrams from scratch
 - ✅ Full editing capabilities with all Draw.io tools
 - ✅ Save and close functionality
 - ✅ Clean, modern UI
@@ -45,12 +47,44 @@ A complete ASP.NET Web Forms application that integrates Draw.io/diagrams.net fo
 
 ## How to Use
 
-1. The page displays a diagram thumbnail
-2. Click the thumbnail (or "Open in Editor" button)
-3. Draw.io editor loads with the diagram
+### Using XMLPNG Files (Recommended)
+
+1. **Create a diagram in Draw.io:**
+   - Go to https://app.diagrams.net
+   - Create your diagram
+   - File → Export as → PNG
+   - **IMPORTANT**: Check "Include a copy of my diagram"
+   - Export and save the PNG file
+
+2. **Use in the application:**
+   - Place your PNG file in the application folder
+   - Update `Default.aspx` to point to your PNG (or rename to `diagram-thumbnail.png`)
+   - Click the PNG thumbnail
+   - The application extracts the embedded XML and loads it in the editor!
+
+3. **Edit and save:**
+   - Make changes in the Draw.io editor
+   - Click "Save and Exit"
+   - Export a new PNG with embedded data
+   - Replace the old PNG file
+
+**See `HOW_TO_CREATE_XMLPNG.txt` for detailed instructions.**
+
+### Basic Usage
+
+1. The page displays a diagram thumbnail (PNG image)
+2. Click the thumbnail (or "Open Diagram from PNG" button)
+3. Draw.io editor loads with the diagram extracted from PNG
 4. Edit your diagram using all Draw.io features
 5. Click "Save and Exit" or "Close Editor" to return
 6. Your changes are captured (see customization section)
+
+### Create New Diagram
+
+1. Click "Create New Diagram" button
+2. Draw.io editor opens with empty canvas
+3. Create your diagram from scratch
+4. Save when done
 
 ## Project Structure
 
@@ -85,7 +119,16 @@ private string GetSampleDiagramXml()
 
 ### Change the Thumbnail
 
-Replace `diagram-thumbnail.png` with your own diagram image (recommended: 400x300 or 800x600 pixels).
+Replace `diagram-thumbnail.png` with your own PNG file that contains embedded Draw.io diagram data.
+
+**To create a PNG with embedded data:**
+1. Create diagram in Draw.io (https://app.diagrams.net)
+2. File → Export as → PNG
+3. **Check "Include a copy of my diagram"** (this is critical!)
+4. Export and save
+5. Replace `diagram-thumbnail.png` with your exported file
+
+**See `HOW_TO_CREATE_XMLPNG.txt` for complete instructions.**
 
 ### Implement Save Functionality
 
