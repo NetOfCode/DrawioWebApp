@@ -1,4 +1,4 @@
-<%@ Page Language="C#" AutoEventWireup="true" CodeBehind="Default.aspx.cs" Inherits="DrawioWebApp.Default" %>
+﻿<%@ Page Language="C#" AutoEventWireup="true" CodeBehind="Default.aspx.cs" Inherits="DrawioWebApp.Default" %>
 
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -87,10 +87,17 @@
         var iframe = null;
         var diagramXml = null;
         var isNewDiagram = false;
+        var exportedImageData = null; // Variable to store the exported PNG image data (base64)
         
         function openEditor() {
-            // Get the diagram XML from server (existing diagram)
-            diagramXml = `<%= DiagramXml.Replace("\"", "\\\"").Replace("\r\n", "").Replace("\n", "").Replace("\r", "") %>`;
+            // Use saved diagram XML if available, otherwise use server-side default
+            if (!diagramXml) {
+                // Get the diagram XML from server (only if not already saved)
+                diagramXml = `<%= DiagramXml.Replace("\"", "\\\"").Replace("\r\n", "").Replace("\n", "").Replace("\r", "") %>`;
+                console.log('Loading initial diagram from server');
+            } else {
+                console.log('Loading saved diagram structure (last changes)');
+            }
             isNewDiagram = false;
             
             // Build the diagrams.net URL with embedded mode
@@ -177,32 +184,128 @@
                         }), '*');
                     }
                     
-                    // Handle save event
-                    if (msg.event == 'save') {
-                        console.log('Diagram saved:', msg.xml);
+                    // Received if the user clicks save
+                    else if (msg.event == 'save') {
+                        console.log('Save event received, requesting XMLPNG export...');
+                        console.log('Diagram XML:', msg.xml);
                         
-                        // Indicate if this is a new diagram or updating existing
-                        var saveType = isNewDiagram ? 'New diagram created!' : 'Diagram updated!';
+                        // IMPORTANT: Update diagramXml with the new structure so it loads next time
+                        if (msg.xml) {
+                            diagramXml = msg.xml;
+                            console.log('Diagram XML updated with new structure');
+                            isNewDiagram = false; // Mark as existing diagram (not new anymore)
+                        }
                         
-                        // Here you could send the data back to the server via AJAX
-                        // Example: saveDiagramToServer(msg.xml, isNewDiagram);
-                        alert(saveType + '\n\n(In production, this would save to server)');
-                        
-                        // Send export command to acknowledge save
+                        // Sends a request to export the diagram as XML with embedded PNG so we can store it in the database
+                        // Try different export formats - Draw.io might use different format names
                         iframe.contentWindow.postMessage(JSON.stringify({
-                            action: 'export'
+                            action: 'export',
+                            format: 'xmlpng',
+                            spinKey: 'saving'
                         }), '*');
+                        
+                        // Also try without format to see what Draw.io returns
+                        console.log('Export request sent with format: xmlpng');
                     }
                     
-                    // Handle exit event
+                    // Received if the export request was processed
+                    else if (msg.event == 'export') {
+                        console.log('Export event received');
+                        console.log('Full export message:', msg);
+                        console.log('msg.data type:', typeof msg.data);
+                        console.log('msg.data length:', msg.data ? msg.data.length : 'null/undefined');
+                        
+                        // Check different possible data formats
+                        var imageDataUri = null;
+                        var base64Data = null;
+                        
+                        // Try msg.data (could be base64 string or full data URI)
+                        if (msg.data && typeof msg.data === 'string') {
+                            // Check if it's already a data URI
+                            if (msg.data.indexOf('data:image') === 0) {
+                                // It's already a full data URI - use it directly
+                                imageDataUri = msg.data;
+                                // Extract just the base64 part for storage (without the prefix)
+                                var base64Match = msg.data.match(/data:image\/png;base64,(.+)/);
+                                if (base64Match && base64Match[1]) {
+                                    base64Data = base64Match[1];
+                                } else {
+                                    // Fallback: use the whole string if extraction fails
+                                    base64Data = msg.data;
+                                }
+                                console.log('Found image data in msg.data (full data URI)');
+                            } else {
+                                // It's just base64, need to add data URI prefix
+                                base64Data = msg.data;
+                                imageDataUri = 'data:image/png;base64,' + msg.data;
+                                console.log('Found image data in msg.data (base64 only, added prefix)');
+                            }
+                        }
+                        // Try msg.xml (if it's the XMLPNG format)
+                        else if (msg.xml && typeof msg.xml === 'string' && msg.xml.indexOf('data:image') !== -1) {
+                            // Extract base64 from data URI
+                            var base64Match = msg.xml.match(/data:image\/png;base64,(.+)/);
+                            if (base64Match && base64Match[1]) {
+                                base64Data = base64Match[1];
+                                imageDataUri = msg.xml;
+                                console.log('Found image data in msg.xml (extracted from data URI)');
+                            }
+                        }
+                        // Try msg.dataUri
+                        else if (msg.dataUri && typeof msg.dataUri === 'string') {
+                            var base64Match = msg.dataUri.match(/data:image\/png;base64,(.+)/);
+                            if (base64Match && base64Match[1]) {
+                                base64Data = base64Match[1];
+                                imageDataUri = msg.dataUri;
+                                console.log('Found image data in msg.dataUri (extracted from data URI)');
+                            }
+                        }
+                        
+                        // Updates the data URI of the image
+                        if (imageDataUri && base64Data) {
+                            // Capture the exported image data in JavaScript variable (store just base64)
+                            exportedImageData = base64Data;
+                            console.log('New image data captured and stored in exportedImageData variable');
+                            console.log('Data size:', exportedImageData.length, 'characters');
+                            
+                            // Update the thumbnail image with the new exported PNG (override old image)
+                            var thumbnail = document.querySelector('.diagram-thumbnail');
+                            if (thumbnail) {
+                                // Override old image with new one (use the full data URI)
+                                thumbnail.src = imageDataUri;
+                                console.log('Thumbnail image updated with new exported PNG (old image overridden)');
+                                
+                                // Show the thumbnail (in case it was hidden)
+                                thumbnail.style.display = '';
+                                var noImageDiv = document.getElementById('noImage');
+                                if (noImageDiv) {
+                                    noImageDiv.style.display = 'none';
+                                }
+                            }
+                            
+                            // The exportedImageData variable now contains the new base64 PNG data
+                            // This replaces/overrides the old image data
+                            console.log('New image structure saved successfully!');
+                            console.log('You can access the data via: exportedImageData');
+                            
+                            // After export completes, close the editor automatically
+                            // This handles the "Save and Exit" flow
+                            console.log('Closing editor after successful export...');
+                            setTimeout(function() {
+                                closeEditor();
+                            }, 100); // Small delay to ensure image update completes
+                        } else {
+                            console.warn('Export event received but could not extract image data');
+                            console.warn('Available properties:', Object.keys(msg));
+                            console.warn('Full message object:', JSON.stringify(msg, null, 2));
+                        }
+                    }
+                    
+                    // Received if the user clicks exit or after export
                     if (msg.event == 'exit') {
+                        console.log('Exit event received, closing editor...');
+                        // Closes the editor
                         closeEditor();
-                    }
-                    
-                    // Handle export event
-                    if (msg.event == 'export') {
-                        console.log('Diagram exported');
-                        // Optionally save the exported data
                     }
                 } catch(e) {
                     // Ignore non-JSON messages
