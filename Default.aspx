@@ -88,6 +88,7 @@
         var diagramXml = null;
         var isNewDiagram = false;
         var exportedImageData = null; // Variable to store the exported PNG image data (base64)
+        var diagramName = 'Untitled Diagram'; // Store diagram name
         
         function openEditor() {
             // Use saved diagram XML if available, otherwise use server-side default
@@ -133,6 +134,130 @@
             document.getElementById('editorSection').classList.add('active');
         }
 
+        /**
+         * Extracts diagram name from XML
+         */
+        function extractDiagramName(xml) {
+            try {
+                if (!xml) return 'Untitled Diagram';
+                
+                // Try to find diagram name in XML
+                // Pattern: <diagram name="DiagramName" or name='DiagramName'
+                var nameMatch = xml.match(/<diagram[^>]*name=["']([^"']+)["']/i);
+                if (nameMatch && nameMatch[1]) {
+                    return nameMatch[1];
+                }
+                
+                // Try alternative pattern
+                nameMatch = xml.match(/name=["']([^"']+)["'][^>]*>/i);
+                if (nameMatch && nameMatch[1]) {
+                    return nameMatch[1];
+                }
+                
+                return 'Untitled Diagram';
+            } catch(e) {
+                console.error('Error extracting diagram name:', e);
+                return 'Untitled Diagram';
+            }
+        }
+        
+        /**
+         * Updates diagram name in the XML
+         * More robust version that preserves XML structure
+         */
+        function updateDiagramNameInXml(xml, newName) {
+            try {
+                if (!xml || !newName) return xml;
+                
+                // Escape XML special characters in the new name
+                var escapedName = newName
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&apos;');
+                
+                // More precise pattern: match <diagram followed by attributes, then name="value" or name='value'
+                // Pattern 1: name="value" (double quotes)
+                var updatedXml = xml.replace(/<diagram([^>]*\s)name=["']([^"']*)["']([^>]*>)/i, 
+                    function(match, before, oldName, after) {
+                        return '<diagram' + before + 'name="' + escapedName + '"' + after;
+                    });
+                
+                // Pattern 2: name='value' (single quotes) - if first pattern didn't match
+                if (updatedXml === xml) {
+                    updatedXml = xml.replace(/<diagram([^>]*\s)name=['"]([^'"]*)['"]([^>]*>)/i, 
+                        function(match, before, oldName, after) {
+                            return '<diagram' + before + 'name="' + escapedName + '"' + after;
+                        });
+                }
+                
+                // Pattern 3: name attribute at the start of <diagram tag
+                if (updatedXml === xml) {
+                    updatedXml = xml.replace(/<diagram\s+name=["']([^"']*)["']([^>]*>)/i, 
+                        function(match, oldName, after) {
+                            return '<diagram name="' + escapedName + '"' + after;
+                        });
+                }
+                
+                // If no name attribute exists, add it after <diagram
+                if (updatedXml === xml) {
+                    // Find the first <diagram tag and add name attribute
+                    updatedXml = xml.replace(/<diagram(\s+[^>]*>)/i, 
+                        function(match, rest) {
+                            // Check if name already exists (shouldn't happen, but safety check)
+                            if (rest.indexOf('name=') === -1) {
+                                return '<diagram name="' + escapedName + '"' + rest;
+                            }
+                            return match;
+                        });
+                }
+                
+                // Validate that the XML structure is still intact
+                // Check that we still have <mxfile> and <diagram> tags
+                if (updatedXml.indexOf('<mxfile') === -1 || updatedXml.indexOf('</mxfile>') === -1) {
+                    console.error('ERROR: XML structure broken - missing mxfile tags');
+                    return xml; // Return original on error
+                }
+                
+                if (updatedXml.indexOf('<diagram') === -1 || updatedXml.indexOf('</diagram>') === -1) {
+                    console.error('ERROR: XML structure broken - missing diagram tags');
+                    return xml; // Return original on error
+                }
+                
+                console.log('XML name update successful - Original length:', xml.length, 'Updated length:', updatedXml.length);
+                console.log('New name:', newName, 'Escaped:', escapedName);
+                
+                // Log a snippet to verify structure
+                var snippet = updatedXml.substring(0, Math.min(200, updatedXml.length));
+                console.log('XML snippet (first 200 chars):', snippet);
+                
+                return updatedXml;
+            } catch(e) {
+                console.error('Error updating diagram name in XML:', e);
+                console.error('XML snippet:', xml.substring(0, 200));
+                return xml; // Return original on error
+            }
+        }
+        
+        /**
+         * Updates diagram name when user changes it in the input field
+         */
+        function updateDiagramName(newName) {
+            diagramName = newName || 'Untitled Diagram';
+            console.log('Diagram name updated to:', diagramName);
+            
+            // If diagram is loaded, update the XML with new name
+            if (diagramXml && iframe) {
+                // Update the XML with new name
+                diagramXml = updateDiagramNameInXml(diagramXml, diagramName);
+                console.log('Diagram XML updated with new name');
+                
+                // Optionally reload the diagram in editor with new name
+                // (This is optional - the name will be saved when user saves)
+            }
+        }
+        
         function closeEditor() {
             // Hide editor, show thumbnail
             document.getElementById('editorSection').classList.remove('active');
@@ -156,6 +281,14 @@
                         
                         // If opening existing diagram, load the XML
                         if (!isNewDiagram && diagramXml) {
+                            // Extract and display diagram name
+                            diagramName = extractDiagramName(diagramXml);
+                            var nameInput = document.getElementById('diagramNameInput');
+                            if (nameInput) {
+                                nameInput.value = diagramName;
+                            }
+                            console.log('Diagram name extracted:', diagramName);
+                            
                             iframe.contentWindow.postMessage(JSON.stringify({
                                 action: 'load',
                                 autosave: 1,
@@ -164,7 +297,13 @@
                         } else {
                             // For new diagram, load empty diagram XML
                             console.log('Starting with empty diagram');
-                            var emptyDiagram = '<mxfile host="app.diagrams.net"><diagram id="new"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>';
+                            diagramName = 'Untitled Diagram';
+                            var nameInput = document.getElementById('diagramNameInput');
+                            if (nameInput) {
+                                nameInput.value = diagramName;
+                            }
+                            
+                            var emptyDiagram = '<mxfile host="app.diagrams.net"><diagram id="new" name="' + diagramName + '"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/></root></mxGraphModel></diagram></mxfile>';
                             iframe.contentWindow.postMessage(JSON.stringify({
                                 action: 'load',
                                 autosave: 1,
@@ -191,8 +330,33 @@
                         
                         // IMPORTANT: Update diagramXml with the new structure so it loads next time
                         if (msg.xml) {
+                            // Store the XML from Draw.io first (it already has the correct structure)
                             diagramXml = msg.xml;
-                            console.log('Diagram XML updated with new structure');
+                            console.log('Diagram XML received from Draw.io, length:', diagramXml.length);
+                            
+                            // Then update the name in the stored XML
+                            // Only update if name was changed (to avoid unnecessary processing)
+                            var currentNameInXml = extractDiagramName(diagramXml);
+                            console.log('Current name in XML:', currentNameInXml, 'Desired name:', diagramName);
+                            
+                            if (currentNameInXml !== diagramName) {
+                                console.log('Updating diagram name from "' + currentNameInXml + '" to "' + diagramName + '"');
+                                var xmlBefore = diagramXml;
+                                diagramXml = updateDiagramNameInXml(diagramXml, diagramName);
+                                
+                                // Verify the update worked
+                                var nameAfter = extractDiagramName(diagramXml);
+                                if (nameAfter === diagramName) {
+                                    console.log('✓ Diagram name successfully updated');
+                                } else {
+                                    console.error('✗ Diagram name update failed! Expected:', diagramName, 'Got:', nameAfter);
+                                    console.error('Reverting to original XML');
+                                    diagramXml = xmlBefore; // Revert on failure
+                                }
+                            } else {
+                                console.log('Diagram name unchanged, no update needed');
+                            }
+                            
                             isNewDiagram = false; // Mark as existing diagram (not new anymore)
                         }
                         
@@ -344,6 +508,16 @@
             
             <!-- Editor Section -->
             <div id="editorSection" class="editor-container">
+                <div style="margin-bottom: 15px; padding: 10px; background-color: #f9f9f9; border-radius: 4px;">
+                    <label for="diagramNameInput" style="display: block; margin-bottom: 5px; font-weight: bold; color: #333;">Diagram Name:</label>
+                    <input type="text" 
+                           id="diagramNameInput" 
+                           value="Untitled Diagram" 
+                           style="width: 100%; max-width: 500px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;"
+                           onchange="updateDiagramName(this.value)"
+                           placeholder="Enter diagram name" />
+                    <p style="margin-top: 5px; font-size: 12px; color: #666;">The diagram name is stored in the diagram and will be saved when you save the diagram.</p>
+                </div>
                 <p class="instruction">
                     <strong>Edit your diagram below. Click "Save and Exit" in the editor or the button below to return.</strong>
                 </p>
