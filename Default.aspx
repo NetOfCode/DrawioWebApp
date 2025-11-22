@@ -58,6 +58,34 @@
             height: 800px;
             border: 2px solid #ff6b00;
             border-radius: 4px;
+            opacity: 0;
+            transition: opacity 0.3s ease-in;
+        }
+        #diagramEditor.loaded {
+            opacity: 1;
+        }
+        .editor-loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            font-size: 16px;
+            display: block; /* Visible by default when editor section is active */
+        }
+        .editor-loading.hidden {
+            display: none; /* Hidden when editor is loaded */
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #ff6b00;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
         .button-container {
             text-align: center;
@@ -107,6 +135,15 @@
             // Get iframe reference
             iframe = document.getElementById('diagramEditor');
             
+            // Hide iframe initially (will show after init event)
+            iframe.classList.remove('loaded');
+            
+            // Show loading indicator
+            var loadingDiv = document.getElementById('editorLoading');
+            if (loadingDiv) {
+                loadingDiv.classList.remove('hidden');
+            }
+            
             // Set iframe source
             iframe.src = editorUrl;
             
@@ -125,6 +162,15 @@
             
             // Get iframe reference
             iframe = document.getElementById('diagramEditor');
+            
+            // Hide iframe initially (will show after init event)
+            iframe.classList.remove('loaded');
+            
+            // Show loading indicator
+            var loadingDiv = document.getElementById('editorLoading');
+            if (loadingDiv) {
+                loadingDiv.classList.remove('hidden');
+            }
             
             // Set iframe source
             iframe.src = editorUrl;
@@ -263,8 +309,17 @@
             document.getElementById('editorSection').classList.remove('active');
             document.getElementById('thumbnailSection').style.display = 'block';
             
-            // Clear iframe source
-            iframe.src = 'about:blank';
+            // Hide loading indicator (in case it's still showing)
+            var loadingDiv = document.getElementById('editorLoading');
+            if (loadingDiv) {
+                loadingDiv.classList.add('hidden');
+            }
+            
+            // Clear iframe source and reset loaded state
+            if (iframe) {
+                iframe.src = 'about:blank';
+                iframe.classList.remove('loaded');
+            }
             iframe = null;
             isNewDiagram = false;
         }
@@ -278,6 +333,15 @@
                     // Handle init event - sent when editor is ready
                     if (msg.event == 'init') {
                         console.log('Draw.io editor initialized');
+                        
+                        // Hide loading indicator and show iframe
+                        var loadingDiv = document.getElementById('editorLoading');
+                        if (loadingDiv) {
+                            loadingDiv.classList.add('hidden');
+                        }
+                        if (iframe) {
+                            iframe.classList.add('loaded');
+                        }
                         
                         // If opening existing diagram, load the XML
                         if (!isNewDiagram && diagramXml) {
@@ -521,6 +585,10 @@
                 <p class="instruction">
                     <strong>Edit your diagram below. Click "Save and Exit" in the editor or the button below to return.</strong>
                 </p>
+                <div id="editorLoading" class="editor-loading">
+                    <div class="spinner"></div>
+                    <p>Loading Draw.io editor...</p>
+                </div>
                 <iframe id="diagramEditor"></iframe>
                 <div class="button-container">
                     <button type="button" class="btn btn-secondary" onclick="closeEditor()">Close Editor</button>
